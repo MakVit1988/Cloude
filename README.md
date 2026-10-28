@@ -2,7 +2,17 @@
 
 MCP-сервер для КОМПАС-3D (v22+): Claude Desktop / Claude Code управляют КОМПАС через COM (API7 + API5).
 
-> **Статус: проверено на КОМПАС-3D v22 (Windows, Python 3.14)**: kompas_version, list_documents, get_mass_properties, export_document (STEP, STL, PDF, DXF, DWG), create_document, sketch_extrude, draw_line, draw_circle. Не проверены: сборки (get_assembly_structure, get_bom), get_variables/set_variable, inspect_com, работа по stdio, макросы.
+> **Статус: проверено на живом КОМПАС-3D v22 (Windows, Python 3.14).**
+>
+> Работает: `kompas_version`, `list_documents`, `open_document`, `create_document`, `get_mass_properties`,
+> `get_variables`, `set_variable`, `get_assembly_structure`, `get_bom`, `export_document` (STEP, STL, PDF, DXF, DWG),
+> `sketch_extrude`, `draw_line`, `draw_circle`, `draw_linear_dimension` (PDF сверен глазами), работа по stdio,
+> подключение к Claude Code (v2.1.311), режим `KOMPAS_MCP_READONLY` (12 инструментов вместо 20),
+> скрытие и показ инструментов макросов по `KOMPAS_MCP_ALLOW_MACROS`.
+>
+> Не проверено: сам запуск макросов (`run_library_command`, `execute_command`), `inspect_com`, `save_document`,
+> `save_document_as`, `close_document`, сборки с сопряжениями, Claude Desktop.
+>
 > Единицы МЦХ приходят в единицах КОМПАС (объём в см³, масса в г), не в мм.
 
 ## Установка (Windows, на машине с КОМПАС-3D)
