@@ -110,11 +110,13 @@ def build_server(backend: Any | None = None, settings: Settings | None = None) -
         shapes: list[dict],
         depth: float,
         plane: Literal["XOY", "XOZ", "YOZ"] = "XOY",
-        operation: Literal["boss", "cut"] = "boss",
+        operation: Literal["base", "boss", "cut"] = "base",
         direction: Literal["normal", "reverse", "both"] = "normal",
         path: str | None = None,
     ) -> dict:
-        """Создать эскиз и выдавить (boss) или вырезать (cut) в активной 3D-модели. Размеры в мм.
+        """Создать эскиз и выдавить в активной 3D-модели. Размеры в мм.
+
+        operation: base — первая операция в пустой детали, boss — приклеить к телу, cut — вырезать.
 
         shapes: список фигур —
           {"type":"rect","x":0,"y":0,"w":50,"h":30},

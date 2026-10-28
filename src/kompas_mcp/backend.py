@@ -38,15 +38,18 @@ FALLBACK_CONSTANTS = {
     "o3d_planeXOZ": 2,
     "o3d_planeYOZ": 3,
     "o3d_sketch": 5,
-    "o3d_bossExtrusion": 24,
+    "o3d_baseExtrusion": 24,
+    "o3d_bossExtrusion": 25,
     "o3d_cutExtrusion": 26,
     "pTop_Part": -1,
     "dtNormal": 0,
     "dtReverse": 1,
     "dtBoth": 2,
     "etBlind": 0,
-    "ksDrLDimension": 12,
 }
+
+# D3FormatConvType (SaveAsToAdditionFormat)
+FORMAT_3D_CODES = {"sat": 1, "x_t": 2, "step": 3, "stp": 3, "igs": 4, "iges": 4, "stl": 6}
 
 API7_TLB = "{69AC2981-37C0-4379-84FD-5DD2F3C0A520}"
 API5_TLB = "{0422828C-F174-495E-AC5D-D31014DBBE87}"
@@ -239,15 +242,16 @@ class Kompas:
     def save_document(self, path: str | None = None) -> dict:
         with self._lock:
             doc = self._find(path)
-            if not doc.Save():
-                raise KompasError("Сохранение не удалось (документ новый? используйте save_document_as)")
+            if not _safe(lambda: doc.PathName):
+                raise KompasError("У документа нет файла: используйте save_document_as")
+            doc.Save()  # void
             return self._doc_info(doc)
 
     def _save_as(self, doc: Any, target: str) -> None:
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-        ok = doc.SaveAs(target)
-        if not ok and not os.path.isfile(target):
-            raise KompasError(f"SaveAs не удался: {target}")
+        doc.SaveAs(target)  # void: успех проверяем по файлу
+        if not os.path.isfile(target):
+            raise KompasError(f"SaveAs не создал файл: {target}")
 
     def save_document_as(self, target: str, path: str | None = None) -> dict:
         with self._lock:
@@ -277,9 +281,11 @@ class Kompas:
             try:
                 mng = self.cast(self.app, "IPropertyMng")
                 keeper = self.cast(doc, "IPropertyKeeper")
-                for prop in _iter(mng.GetProperties(doc)):
+                raw = mng.GetProperties(doc)
+                props = list(raw) if isinstance(raw, (tuple, list)) else [raw]
+                for prop in props:
                     name = _safe(lambda p=prop: p.Name)
-                    value = _safe(lambda p=prop: _scalar(keeper.GetPropertyValue(p, "", True, False)))
+                    value = _safe(lambda p=prop: _prop_value(keeper, p))
                     if name:
                         result["properties"][name] = value
             except Exception as e:  # noqa: BLE001
@@ -293,15 +299,17 @@ class Kompas:
             raise KompasError("Документ не является 3D-моделью (деталью или сборкой)") from e
 
     def _variables(self, part: Any) -> list[Any]:
-        coll = _first_ok(
+        # IFeature7::Variables(ExternalOnly, InSource) -> SAFEARRAY of IVariable7
+        raw = _first_ok(
             "Получение переменных",
             [
-                ("VariableCollection(True)", lambda: part.VariableCollection(True)),
-                ("VariableCollection()", lambda: part.VariableCollection()),
-                ("VariableCollection", lambda: part.VariableCollection),
+                ("Variables(False, False)", lambda: part.Variables(False, False)),
+                ("GetVariables(False, False)", lambda: part.GetVariables(False, False)),
             ],
         )
-        return _iter(coll)
+        if raw is None:
+            return []
+        return list(raw) if isinstance(raw, (tuple, list)) else [raw]
 
     def get_variables(self, path: str | None = None) -> dict:
         with self._lock:
@@ -331,34 +339,37 @@ class Kompas:
                         "Перестроение модели",
                         [
                             ("RebuildDocument", lambda: self.cast(doc, "IKompasDocument3D").RebuildDocument()),
-                            ("Part.Update", lambda: part.Update()),
+                            ("Part.RebuildModel", lambda: part.RebuildModel()),
                         ],
                     )
                     return {"name": name, "expression": expression, "value": _safe(lambda v=v: v.Value)}
             raise KompasError(f"Переменная не найдена: {name}")
 
     def get_mass_properties(self, path: str | None = None) -> dict:
+        """МЦХ через IMassInertiaParam7 (доп. интерфейс IPart7, берётся QueryInterface)."""
         with self._lock:
             doc = self._find(path)
             part = self._top_part(doc)
-
-            def via(name: str):
-                def run():
-                    member = getattr(part, name)
-                    return member() if callable(member) else member
-
-                return (name, run)
-
-            res = _first_ok(
-                "Массо-центровочные характеристики",
-                [via("CalcMassInertiaProperties"), via("MassInertiaParam"), via("GetMassInertiaParam")],
-            )
-            fields = ["Mass", "Volume", "Area", "Xc", "Yc", "Zc", "Ixc", "Iyc", "Izc", "Ix", "Iy", "Iz"]
-            values = {f: _safe(lambda f=f: getattr(res, f)) for f in fields}
-            values = {k: v for k, v in values.items() if v is not None}
-            if not values:
+            res: dict[str, Any] = {}
+            try:
+                mi = self.cast(part, "IMassInertiaParam7")
+                mi.Calculate()
+                fields = [
+                    "Mass", "Volume", "Area", "Density", "Xc", "Yc", "Zc",
+                    "Jx", "Jy", "Jz", "Jxy", "Jxz", "Jyz", "Jx0", "Jy0", "Jz0",
+                    "Lx", "Ly", "Lz", "Lxy", "Lxz", "Lyz", "LengthUnits", "MassUnits",
+                ]
+                res = {f: _safe(lambda f=f: getattr(mi, f)) for f in fields}
+                res = {k: v for k, v in res.items() if v is not None}
+            except Exception as e:  # noqa: BLE001
+                mass = _safe(lambda: part.Mass)
+                if mass is None:
+                    raise KompasError(f"МЦХ недоступны: {e}") from e
+                res = {"Mass": mass, "Density": _safe(lambda: part.Density), "note": f"IMassInertiaParam7 недоступен: {e}"}
+            if not res:
                 raise KompasError("Результат расчёта МЦХ пуст — проверьте материал и плотность детали")
-            return {"document": self._doc_info(doc), "mass_properties": values}
+            res["Material"] = _safe(lambda: part.Material)
+            return {"document": self._doc_info(doc), "mass_properties": res}
 
     # ------------------------------------------------------ состав сборки
 
@@ -401,6 +412,7 @@ class Kompas:
     # ----------------------------------------------------------- экспорт
 
     def export_document(self, fmt: str, target: str, path: str | None = None) -> dict:
+        """3D: ksDocument3D.SaveAsToAdditionFormat (API5). 2D (pdf/dxf/dwg): IKompasDocument.SaveAs по расширению."""
         with self._lock:
             fmt = fmt.lower().lstrip(".")
             if fmt not in EXPORT_FORMATS:
@@ -416,9 +428,22 @@ class Kompas:
             if os.path.splitext(target)[1].lower().lstrip(".") != fmt:
                 target = f"{target}.{fmt}"
             os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-            doc.SaveAs(target)
+            if fmt in FORMATS_3D:
+                if fmt not in FORMAT_3D_CODES:
+                    raise KompasError(f"Формат {fmt} пока не поддержан для 3D-экспорта")
+                doc.Active = True
+                doc3d = self.api5.ActiveDocument3D()
+                par = doc3d.AdditionFormatParam()
+                par.Init()
+                par.format = FORMAT_3D_CODES[fmt]
+                if fmt == "stl":
+                    par.formatBinary = True
+                if not doc3d.SaveAsToAdditionFormat(target, par):
+                    raise KompasError(f"SaveAsToAdditionFormat вернул FALSE для {target}")
+            else:
+                doc.SaveAs(target)
             if not os.path.isfile(target):
-                raise KompasError(f"Файл не создан: {target}. Формат {fmt} не поддержан SaveAs в вашей версии?")
+                raise KompasError(f"Файл не создан: {target}. Формат {fmt} не поддержан в вашей версии?")
             return {"exported": target, "size": os.path.getsize(target), "source": info}
 
     # --------------------------------------------------- построение 3D-модели
@@ -428,11 +453,13 @@ class Kompas:
         shapes: list[dict],
         depth: float,
         plane: str = "XOY",
-        operation: str = "boss",
+        operation: str = "base",
         direction: str = "normal",
         path: str | None = None,
     ) -> dict:
         """Эскиз на плоскости из примитивов и операция выдавливания/вырезания (API5).
+
+        base — первая операция в пустой детали, boss — приклеить к существующему телу, cut — вырезать.
 
         Размеры — в мм. shapes: rect {x,y,w,h}, circle {cx,cy,r}, line {x1,y1,x2,y2},
         polygon {points:[[x,y],...]} (замкнутый).
@@ -440,8 +467,8 @@ class Kompas:
         with self._lock:
             if plane not in PLANES:
                 raise KompasError(f"plane: одна из {sorted(PLANES)}")
-            if operation not in ("boss", "cut"):
-                raise KompasError("operation: boss или cut")
+            if operation not in ("base", "boss", "cut"):
+                raise KompasError("operation: base (первая операция детали), boss (добавить) или cut (вырезать)")
             if direction not in ("normal", "reverse", "both"):
                 raise KompasError("direction: normal, reverse или both")
             if depth <= 0:
@@ -470,7 +497,7 @@ class Kompas:
                         s2d.ksCircle(seg[1], seg[2], seg[3], 1)
             finally:
                 sdef.EndEdit()
-            kind = "o3d_bossExtrusion" if operation == "boss" else "o3d_cutExtrusion"
+            kind = {"base": "o3d_baseExtrusion", "boss": "o3d_bossExtrusion", "cut": "o3d_cutExtrusion"}[operation]
             ext = part.NewEntity(self.const(kind))
             edef = ext.GetDefinition()
             edef.directionType = self.const({"normal": "dtNormal", "reverse": "dtReverse", "both": "dtBoth"}[direction])
@@ -511,8 +538,9 @@ class Kompas:
     ) -> dict:
         """Линейный размер между (x1,y1) и (x2,y2); (x3,y3) — положение размерной линии."""
         with self._lock:
-            dc = self._drawing_container(self._find(path))
-            dim = dc.LineDimensions.Add(self.const("ksDrLDimension"))
+            doc2d = self.cast(self._find(path), "IKompasDocument2D")
+            view = doc2d.ViewsAndLayersManager.Views.ActiveView
+            dim = self.cast(view, "ISymbols2DContainer").LineDimensions.Add()
             dim.X1, dim.Y1, dim.X2, dim.Y2, dim.X3, dim.Y3 = x1, y1, x2, y2, x3, y3
             dim.Update()
             return {"ok": True}
@@ -570,6 +598,19 @@ class Kompas:
                 "version": _safe(lambda: self.app.Version) or _safe(lambda: str(self.app.ApplicationVersion)),
                 "visible": _safe(lambda: self.app.Visible),
             }
+
+
+def _prop_value(keeper: Any, prop: Any) -> Any:
+    """IPropertyKeeper.GetPropertyValue(Property, out Value, BaseUnit, out FromSource) -> (ok, value, fromSource)."""
+    for args in (("", True, False), (None, True, False), (True,)):
+        try:
+            r = keeper.GetPropertyValue(prop, *args)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(r, tuple):
+            return r[1] if len(r) > 1 and isinstance(r[0], bool) else _scalar(r)
+        return r
+    return None
 
 
 def _safe(fn: Callable[[], Any]) -> Any:

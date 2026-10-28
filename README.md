@@ -2,10 +2,11 @@
 
 MCP-сервер для КОМПАС-3D (v22+): Claude Desktop / Claude Code управляют КОМПАС через COM (API7 + API5).
 
-> **Статус: черновик, не проверен на живом КОМПАС.** Каркас MCP, режимы доступа и проверка путей покрыты тестами
-> на заглушке. Вызовы COM написаны по памяти об API КОМПАС и **не запускались**. Места с неуверенными сигнатурами
-> (переменные, МЦХ, свойства, 2D-размеры, `SaveAs` в PDF/STEP) перебирают варианты вызова, а при неудаче пишут,
-> что именно не сработало. Для отладки есть инструмент `inspect_com`.
+> **Статус: черновик, не проверен на живом КОМПАС.** MCP-слой, режимы доступа и проверка путей покрыты тестами
+> на заглушке. COM-вызовы сверены со справкой SDK КОМПАС-3D v25 (имена интерфейсов, сигнатуры, константы), но ни разу
+> не запускались. Особенно не проверены: приведение типов через `QueryInterface`, разворачивание out-параметров
+> в `pywin32`, экспорт PDF/DXF/DWG через `SaveAs` (в справке `SaveAs` не описан как конвертер). Для отладки есть
+> инструмент `inspect_com`.
 
 ## Установка (Windows, на машине с КОМПАС-3D)
 
@@ -46,7 +47,7 @@ Claude Code: `claude mcp add kompas-3d -- C:\path\to\Cloude\.venv\Scripts\kompas
 `open_document`, `activate_document`, `close_document`.
 
 Изменение: `create_document`, `save_document`, `save_document_as`, `set_variable`,
-`sketch_extrude` (эскиз из rect/circle/line/polygon + выдавливание или вырезание),
+`sketch_extrude` (эскиз из rect/circle/line/polygon + выдавливание: base — первая операция, boss — приклеить, cut — вырезать),
 `draw_line`, `draw_circle`, `draw_linear_dimension`.
 
 Макросы (только с `KOMPAS_MCP_ALLOW_MACROS=1`): `run_library_command`, `execute_command`.
