@@ -298,18 +298,20 @@ class Kompas:
         except Exception as e:  # noqa: BLE001
             raise KompasError("Документ не является 3D-моделью (деталью или сборкой)") from e
 
+    def _as(self, obj: Any, iface: str) -> Any:
+        """QueryInterface к iface; если не вышло, вернуть объект как есть."""
+        try:
+            return self.cast(obj, iface)
+        except Exception:  # noqa: BLE001
+            return obj
+
     def _variables(self, part: Any) -> list[Any]:
-        # IFeature7::Variables(ExternalOnly, InSource) -> SAFEARRAY of IVariable7
-        raw = _first_ok(
-            "Получение переменных",
-            [
-                ("Variables(False, False)", lambda: part.Variables(False, False)),
-                ("GetVariables(False, False)", lambda: part.GetVariables(False, False)),
-            ],
-        )
-        if raw is None:
-            return []
-        return list(raw) if isinstance(raw, (tuple, list)) else [raw]
+        # Проверено на v22: у IPart7 нет Variables, переменные читаются через IFeature7.
+        feat = self._as(part, "IFeature7")
+        count = _safe(lambda: int(feat.VariablesCount))
+        if count is None:
+            raise KompasError("Не удалось получить число переменных (IFeature7.VariablesCount)")
+        return [feat.Variable(False, False, i) for i in range(count)]
 
     def get_variables(self, path: str | None = None) -> dict:
         with self._lock:
@@ -342,7 +344,13 @@ class Kompas:
                             ("Part.RebuildModel", lambda: part.RebuildModel()),
                         ],
                     )
-                    return {"name": name, "expression": expression, "value": _safe(lambda v=v: v.Value)}
+                    # после перестроения старый объект хранит прежнее значение — читаем заново
+                    fresh = next((x for x in self._variables(part) if _safe(lambda x=x: x.Name) == name), v)
+                    return {
+                        "name": name,
+                        "expression": _safe(lambda: fresh.Expression),
+                        "value": _safe(lambda: fresh.Value),
+                    }
             raise KompasError(f"Переменная не найдена: {name}")
 
     def get_mass_properties(self, path: str | None = None) -> dict:
@@ -374,6 +382,7 @@ class Kompas:
     # ------------------------------------------------------ состав сборки
 
     def _part_node(self, part: Any, depth: int, max_depth: int) -> dict:
+        part = self._as(part, "IPart7")
         node = {
             "name": _safe(lambda: part.Name),
             "marking": _safe(lambda: part.Marking),
