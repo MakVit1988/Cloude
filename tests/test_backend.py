@@ -36,8 +36,7 @@ class FakeFeature:
     def __init__(self, variables, doc):
         self._vars, self._doc = variables, doc
 
-    @property
-    def VariablesCount(self):
+    def VariablesCount(self, external, in_source):
         return len(self._vars)
 
     def Variable(self, external, in_source, index):

@@ -308,7 +308,7 @@ class Kompas:
     def _variables(self, part: Any) -> list[Any]:
         # Проверено на v22: у IPart7 нет Variables, переменные читаются через IFeature7.
         feat = self._as(part, "IFeature7")
-        count = _safe(lambda: int(feat.VariablesCount))
+        count = _safe(lambda: int(feat.VariablesCount(False, False)))  # на v22 это метод (External, InSource)
         if count is None:
             raise KompasError("Не удалось получить число переменных (IFeature7.VariablesCount)")
         return [feat.Variable(False, False, i) for i in range(count)]
