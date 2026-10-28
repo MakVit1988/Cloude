@@ -2,11 +2,8 @@
 
 MCP-сервер для КОМПАС-3D (v22+): Claude Desktop / Claude Code управляют КОМПАС через COM (API7 + API5).
 
-> **Статус: черновик, не проверен на живом КОМПАС.** MCP-слой, режимы доступа и проверка путей покрыты тестами
-> на заглушке. COM-вызовы сверены со справкой SDK КОМПАС-3D v25 (имена интерфейсов, сигнатуры, константы), но ни разу
-> не запускались. Особенно не проверены: приведение типов через `QueryInterface`, разворачивание out-параметров
-> в `pywin32`, экспорт PDF/DXF/DWG через `SaveAs` (в справке `SaveAs` не описан как конвертер). Для отладки есть
-> инструмент `inspect_com`.
+> **Статус: проверено на КОМПАС-3D v22 (Windows, Python 3.14)**: kompas_version, list_documents, get_mass_properties, export_document (STEP, STL, PDF, DXF, DWG), create_document, sketch_extrude, draw_line, draw_circle. Не проверены: сборки (get_assembly_structure, get_bom), get_variables/set_variable, inspect_com, работа по stdio, макросы.
+> Единицы МЦХ приходят в единицах КОМПАС (объём в см³, масса в г), не в мм.
 
 ## Установка (Windows, на машине с КОМПАС-3D)
 

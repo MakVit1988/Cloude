@@ -594,10 +594,12 @@ class Kompas:
     def version(self) -> dict:
         with self._lock:
             self._connect()
-            return {
-                "version": _safe(lambda: self.app.Version) or _safe(lambda: str(self.app.ApplicationVersion)),
-                "visible": _safe(lambda: self.app.Visible),
-            }
+            # IApplication.GetSystemVersion(0) -> (ok, major, minor, release, build)
+            raw = _safe(lambda: self.app.GetSystemVersion(0))
+            version = None
+            if isinstance(raw, tuple) and len(raw) >= 5:
+                version = ".".join(str(n) for n in raw[1:5])
+            return {"version": version, "visible": _safe(lambda: self.app.Visible)}
 
 
 def _prop_value(keeper: Any, prop: Any) -> Any:
